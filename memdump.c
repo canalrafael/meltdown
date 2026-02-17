@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <string.h> // Added for memset
 
 static int running = 1;
 
@@ -22,10 +23,14 @@ int main(int argc, char *argv[]) {
   int width = 16; // characters per line
   int suppress_empty = 1;
 
+  // Fixed: Replaced implicit libkdump_get_autoconfig with manual config
   libkdump_config_t config;
-  config = libkdump_get_autoconfig();
-  config.retries = 10;
+  memset(&config, 0, sizeof(libkdump_config_t));
+  config.cache_miss_threshold = 100; // Calibrated for Cortex-A53
   config.measurements = 2;
+  config.retries = 10;
+  config.physical_offset = 0x80000000;
+
   if (argc >= 4) {
     config.physical_offset = strtoull(argv[3], NULL, 0);
   }
@@ -55,7 +60,7 @@ int main(int argc, char *argv[]) {
   signal(SIGINT, sigint);
 
   while (running && delta < size) {
-    int value = libkdump_read(vaddr + delta);
+    int value = libkdump_read(phys + delta); // Use physical address for libkdump_read
     buffer[delta % width] = value;
 
     if (delta % width == width - 1) {
