@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/mman.h>
 
 const char *strings[] = {
     "If you can read this, this is really bad",
@@ -16,35 +17,50 @@ const char *strings[] = {
     "How can you read this? You should not read this!"};
 
 int main(int argc, char *argv[]) {
-  libkdump_config_t config;
-  config = libkdump_get_autoconfig();
-  libkdump_init(config);
+    // 1. Initialize configuration
+    libkdump_config_t config;
+    memset(&config, 0, sizeof(libkdump_config_t));
 
-  srand(time(NULL));
-  const char *secret = strings[rand() % (sizeof(strings) / sizeof(strings[0]))];
-  int len = strlen(secret);
+    // Default ARMv8 settings for your FZ3
+    config.cache_miss_threshold = 100;
+    config.measurements = 10;
+    config.physical_offset = 0x80000000; 
 
-  printf("\x1b[32;1m[+]\x1b[0m Secret: \x1b[33;1m%s\x1b[0m\n", secret);
+    libkdump_init(config);
 
-  size_t paddr = libkdump_virt_to_phys((size_t)secret);
-  if (!paddr) {
-    printf("\x1b[31;1m[!]\x1b[0m Program requires root privileges (or read access to /proc/<pid>/pagemap)!\n");
-    libkdump_cleanup();
-    exit(1);
-  }
+    // 2. Select the secret string
+    srand(time(NULL));
+    const char *secret = strings[rand() % (sizeof(strings) / sizeof(strings[0]))];
+    int len = strlen(secret);
 
-  printf("\x1b[32;1m[+]\x1b[0m Physical address of secret: \x1b[32;1m0x%zx\x1b[0m\n", paddr);
-  printf("\x1b[32;1m[+]\x1b[0m Exit with \x1b[37;1mCtrl+C\x1b[0m if you are done reading the secret\n");
-  while (1) {
-    // keep string cached for better results
-    volatile size_t dummy = 0, i;
-    for (i = 0; i < len; i++) {
-      dummy += secret[i];
+    // 3. Pin memory to prevent it from moving (Critical for Meltdown)
+    if (mlock(secret, len) != 0) {
+        perror("\x1b[31;1m[!]\x1b[0m mlock failed (try running with sudo)");
     }
-    sched_yield();
-  }
 
-  libkdump_cleanup();
+    // 4. Print address information for your research
+    printf("\x1b[32;1m[+]\x1b[0m Secret: \x1b[33;1m%s\x1b[0m\n", secret);
+    printf("\x1b[32;1m[+]\x1b[0m Virtual address of secret:  \x1b[32;1m0x%zx\x1b[0m\n", (size_t)secret);
 
-  return 0;
+    size_t paddr = libkdump_virt_to_phys((size_t)secret);
+    if (!paddr) {
+        printf("\x1b[31;1m[!]\x1b[0m Program requires root privileges to resolve physical addresses!\n");
+        libkdump_cleanup();
+        exit(1);
+    }
+
+    printf("\x1b[32;1m[+]\x1b[0m Physical address of secret: \x1b[32;1m0x%zx\x1b[0m\n", paddr);
+    printf("\x1b[32;1m[+]\x1b[0m Exit with \x1b[37;1mCtrl+C\x1b[0m if you are done\n");
+
+    // 5. Activity loop to keep the secret in the L1 Cache
+    while (1) {
+        volatile size_t dummy = 0;
+        for (int i = 0; i < len; i++) {
+            dummy += secret[i]; // Constantly access the secret
+        }
+        sched_yield(); // Give the reader process time to run on the core
+    }
+
+    libkdump_cleanup();
+    return 0;
 }

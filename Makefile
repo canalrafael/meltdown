@@ -1,20 +1,17 @@
-override CFLAGS += -O3 -pthread -Wno-attributes -m64
-CC=gcc
-
-#BINARIES=test kaslr physical_reader
+override CFLAGS += -O2 -pthread -Wno-attributes -march=armv8-a -static -fPIC -D_GNU_SOURCE
+CC=aarch64-linux-gnu-gcc
 
 SOURCES := $(wildcard *.c)
 BINARIES := $(SOURCES:%.c=%)
 
 all: $(BINARIES)
 
-libkdump/libkdump.a:  libkdump/libkdump.c
-	make -C libkdump
+libkdump/libkdump.a: libkdump/libkdump.c
+	$(MAKE) -C libkdump CC=$(CC) CFLAGS="$(CFLAGS)"
 
 %: %.c libkdump/libkdump.a
-	$(CC) $< -o $@ -m64 -Llibkdump -Ilibkdump -lkdump -static $(CFLAGS)
-	
-	
+	$(CC) $< -o $@ -Llibkdump -Ilibkdump -lkdump $(CFLAGS)
+    
 clean:
 	rm -f *.o $(BINARIES)
-	make clean -C libkdump
+	$(MAKE) clean -C libkdump

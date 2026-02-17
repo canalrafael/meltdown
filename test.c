@@ -6,7 +6,7 @@
 #include <time.h>
 
 const char *strings[] = {
-    "If you can read this, at least the auto configuration is working",
+    "If you can read this, at least the manual configuration is working",
     "Generating witty test message...",
     "Go ahead with the real exploit if you dare",
     "Have a good day.",
@@ -21,7 +21,12 @@ const char *strings[] = {
 
 int main(int argc, char *argv[]) {
   libkdump_config_t config;
-  config = libkdump_get_autoconfig();
+  memset(&config, 0, sizeof(libkdump_config_t));
+
+  config.cache_miss_threshold = 100;
+  config.measurements = 10;
+  config.physical_offset = 0x80000000;
+
   libkdump_init(config);
 
   srand(time(NULL));
@@ -31,9 +36,12 @@ int main(int argc, char *argv[]) {
   printf("Expect: \x1b[32;1m%s\x1b[0m\n", test);
   printf("   Got: \x1b[33;1m");
   while (index < strlen(test)) {
-    int value = libkdump_read((size_t)(test + index));
-    if (!isprint(value))
+    // Read using virtual address adapted for ARM64 transient loop
+    int value = libkdump_read(libkdump_virt_to_phys((size_t)(test + index)));
+    if (!isprint(value)) {
+      index++; // Avoid infinite loop on non-printables
       continue;
+    }
     printf("%c", value);
     fflush(stdout);
     index++;
@@ -41,6 +49,5 @@ int main(int argc, char *argv[]) {
 
   printf("\x1b[0m\n");
   libkdump_cleanup();
-
   return 0;
 }
